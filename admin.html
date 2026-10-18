@@ -13,13 +13,15 @@
         .btn { background-color: var(--primary-color); color: white; border: none; padding: 12px 20px; border-radius: 6px; cursor: pointer; width: 100%; font-size: 1rem; font-weight: bold; transition: 0.2s; }
         .btn:hover { background-color: #000; }
         .btn-danger { background-color: #cc0000; margin-top: 15px; }
+        .btn-cancel { background-color: #777; margin-top: 10px; }
         .hidden { display: none; }
         #status-msg { margin-top: 15px; text-align: center; font-weight: bold; color: green; }
         
-        /* Estilos para a lista de produtos no Admin */
         .admin-product-list { margin-top: 40px; border-top: 1px solid var(--border-color); padding-top: 20px; }
         .admin-product-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #eee; }
         .admin-product-item span { font-weight: bold; }
+        .btn-edit { background-color: #f39c12; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; margin-right: 5px; }
+        .btn-edit:hover { background-color: #d68910; }
         .btn-delete { background-color: #ff4444; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
         .btn-delete:hover { background-color: #cc0000; }
     </style>
@@ -55,7 +57,7 @@
 
         <!-- TELA DO PAINEL -->
         <div id="admin-screen" class="admin-container hidden">
-            <h2 style="margin-bottom: 20px;">Cadastrar Novo Produto</h2>
+            <h2 id="form-title" style="margin-bottom: 20px;">Cadastrar Novo Produto</h2>
             <form id="product-form">
                 <div class="form-group">
                     <label>Nome da Peça</label>
@@ -70,14 +72,15 @@
                     <textarea id="desc-produto" rows="3" required placeholder="Ex: Impresso em PLA Velvet verde..."></textarea>
                 </div>
                 <div class="form-group">
-                    <label>Foto do Produto</label>
-                    <input type="file" id="foto-produto" accept="image/*" required>
+                    <label>Foto do Produto (Deixe vazio para manter a foto atual ao editar)</label>
+                    <!-- Note que o 'required' foi removido para permitir a edição sem foto nova -->
+                    <input type="file" id="foto-produto" accept="image/*">
                 </div>
                 <button type="submit" class="btn" id="btn-salvar">Salvar Produto</button>
+                <button type="button" class="btn btn-cancel hidden" id="btn-cancelar">Cancelar Edição</button>
                 <div id="status-msg"></div>
             </form>
 
-            <!-- NOVA SEÇÃO: Lista de produtos para excluir -->
             <div class="admin-product-list">
                 <h3>Produtos Cadastrados</h3>
                 <div id="lista-produtos-admin">
@@ -92,7 +95,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-app.js";
         import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-auth.js";
-        import { getFirestore, collection, addDoc, serverTimestamp, getDocs, query, orderBy, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, updateDoc, serverTimestamp, getDocs, query, orderBy, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-storage.js";
 
         // =========================================================
@@ -117,18 +120,22 @@
         const adminScreen = document.getElementById('admin-screen');
         const listaAdmin = document.getElementById('lista-produtos-admin');
         
+        // Variáveis para controle da edição
+        let idEditando = null;
+        let urlImagemAtual = null;
+        let produtosNaMemoria = [];
+        
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 loginScreen.classList.add('hidden');
                 adminScreen.classList.remove('hidden');
-                carregarProdutosAdmin(); // Carrega a lista quando loga
+                carregarProdutosAdmin();
             } else {
                 loginScreen.classList.remove('hidden');
                 adminScreen.classList.add('hidden');
             }
         });
 
-        // ... (Lógica de login e sair continuam iguais)
         document.getElementById('login-form').addEventListener('submit', (e) => {
             e.preventDefault();
             signInWithEmailAndPassword(auth, document.getElementById('email').value, document.getElementById('senha').value)
@@ -136,72 +143,140 @@
         });
         document.getElementById('btn-sair').addEventListener('click', () => { signOut(auth); });
 
-        // Salvar Produto
+        // Lógica de Salvar / Atualizar
         document.getElementById('product-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const btnSalvar = document.getElementById('btn-salvar');
             const statusMsg = document.getElementById('status-msg');
-            btnSalvar.innerText = "Enviando..."; btnSalvar.disabled = true;
+            const arquivoFoto = document.getElementById('foto-produto').files[0];
+            
+            // Validação: Se é um produto novo, a foto é obrigatória
+            if (!idEditando && !arquivoFoto) {
+                alert("Por favor, selecione uma foto para cadastrar o novo produto.");
+                return;
+            }
+
+            btnSalvar.innerText = "Processando..."; btnSalvar.disabled = true;
 
             try {
-                const arquivoFoto = document.getElementById('foto-produto').files[0];
-                const storageRef = ref(storage, 'produtos/' + Date.now() + "_" + arquivoFoto.name);
-                await uploadBytes(storageRef, arquivoFoto);
-                const urlImagem = await getDownloadURL(storageRef);
+                let urlFinalDaImagem = urlImagemAtual;
 
-                await addDoc(collection(db, "produtos"), {
+                // Se o usuário selecionou uma imagem nova (seja em novo cadastro ou editando)
+                if (arquivoFoto) {
+                    const storageRef = ref(storage, 'produtos/' + Date.now() + "_" + arquivoFoto.name);
+                    await uploadBytes(storageRef, arquivoFoto);
+                    urlFinalDaImagem = await getDownloadURL(storageRef);
+                }
+
+                const dadosProduto = {
                     nome: document.getElementById('nome-produto').value,
                     preco: document.getElementById('preco-produto').value,
                     descricao: document.getElementById('desc-produto').value,
-                    imagemUrl: urlImagem,
-                    dataCriacao: serverTimestamp()
-                });
+                    imagemUrl: urlFinalDaImagem
+                };
 
-                statusMsg.innerText = "Salvo com sucesso!";
-                document.getElementById('product-form').reset();
-                carregarProdutosAdmin(); // Atualiza a lista na hora
+                if (idEditando) {
+                    // MODO EDIÇÃO: Atualiza o documento existente
+                    await updateDoc(doc(db, "produtos", idEditando), dadosProduto);
+                    statusMsg.innerText = "Produto atualizado com sucesso!";
+                } else {
+                    // MODO CRIAÇÃO: Adiciona um novo documento
+                    dadosProduto.dataCriacao = serverTimestamp();
+                    await addDoc(collection(db, "produtos"), dadosProduto);
+                    statusMsg.innerText = "Produto salvo com sucesso!";
+                }
+
+                // Limpa o formulário e recarrega a lista
+                document.getElementById('btn-cancelar').click(); 
+                carregarProdutosAdmin();
 
             } catch (error) {
-                statusMsg.style.color = "red"; statusMsg.innerText = "Erro ao salvar.";
+                console.error(error);
+                statusMsg.style.color = "red"; statusMsg.innerText = "Erro ao salvar o produto.";
             } finally {
-                btnSalvar.innerText = "Salvar Produto"; btnSalvar.disabled = false;
-                setTimeout(() => { statusMsg.innerText = ""; }, 3000);
+                btnSalvar.disabled = false;
+                setTimeout(() => { statusMsg.innerText = ""; statusMsg.style.color="green"; }, 3000);
             }
         });
 
-        // NOVA FUNÇÃO: Carregar e Excluir
         async function carregarProdutosAdmin() {
             listaAdmin.innerHTML = "Carregando...";
             const q = query(collection(db, "produtos"), orderBy("dataCriacao", "desc"));
             const snapshot = await getDocs(q);
             
             listaAdmin.innerHTML = "";
+            produtosNaMemoria = []; // Limpa o array
+
             if(snapshot.empty) { listaAdmin.innerHTML = "Nenhum produto."; return; }
 
             snapshot.forEach((documento) => {
                 const prod = documento.data();
-                const id = documento.id; // ID único do produto no banco
+                prod.id = documento.id;
+                produtosNaMemoria.push(prod); // Guarda na memória para facilitar a edição
                 
                 const div = document.createElement('div');
                 div.className = 'admin-product-item';
                 div.innerHTML = `
                     <span>${prod.nome} - R$ ${prod.preco}</span>
-                    <button class="btn-delete" data-id="${id}">Excluir</button>
+                    <div>
+                        <button class="btn-edit" data-id="${prod.id}">Editar</button>
+                        <button class="btn-delete" data-id="${prod.id}">Excluir</button>
+                    </div>
                 `;
                 listaAdmin.appendChild(div);
             });
 
-            // Adiciona o evento de clique nos botões de excluir
+            // Configura os botões de Excluir
             document.querySelectorAll('.btn-delete').forEach(btn => {
                 btn.addEventListener('click', async (e) => {
                     const idParaApagar = e.target.getAttribute('data-id');
                     if(confirm("Tem certeza que deseja apagar este produto?")) {
                         await deleteDoc(doc(db, "produtos", idParaApagar));
-                        carregarProdutosAdmin(); // Recarrega a lista
+                        carregarProdutosAdmin(); 
                     }
                 });
             });
+
+            // Configura os botões de Editar
+            document.querySelectorAll('.btn-edit').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    const idParaEditar = e.target.getAttribute('data-id');
+                    prepararEdicao(idParaEditar);
+                });
+            });
         }
+
+        // Função que preenche o formulário para edição
+        function prepararEdicao(id) {
+            const produto = produtosNaMemoria.find(p => p.id === id);
+            if (!produto) return;
+
+            idEditando = produto.id;
+            urlImagemAtual = produto.imagemUrl;
+
+            document.getElementById('form-title').innerText = "Editar Produto";
+            document.getElementById('nome-produto').value = produto.nome;
+            document.getElementById('preco-produto').value = produto.preco;
+            document.getElementById('desc-produto').value = produto.descricao;
+            document.getElementById('foto-produto').value = ""; // Limpa o campo de arquivo
+
+            document.getElementById('btn-salvar').innerText = "Atualizar Produto";
+            document.getElementById('btn-cancelar').classList.remove('hidden');
+            
+            // Rola a tela para o topo
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // Função para cancelar a edição
+        document.getElementById('btn-cancelar').addEventListener('click', () => {
+            idEditando = null;
+            urlImagemAtual = null;
+            document.getElementById('product-form').reset();
+            
+            document.getElementById('form-title').innerText = "Cadastrar Novo Produto";
+            document.getElementById('btn-salvar').innerText = "Salvar Produto";
+            document.getElementById('btn-cancelar').classList.add('hidden');
+        });
     </script>
 </body>
 </html>
