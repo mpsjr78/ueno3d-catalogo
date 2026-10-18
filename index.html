@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ueno 3D - Catálogo de Impressões</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <div class="container header-container">
+            <div class="logo-wrapper">
+                <img src="logo.png" alt="Ueno 3D Logo" class="logo-img">
+                <span class="logo-text">UENO 3D</span>
+            </div>
+            <!-- O botão agora é um link que leva direto para a tela de admin -->
+            <a href="admin.html" class="login-btn" style="text-decoration: none;">Admin Login</a>
+        </div>
+    </header>
+
+    <main class="container">
+        <section class="intro">
+            <h2>Catálogo de Peças 3D</h2>
+            <p>Itens exclusivos e personalizados, impressos com alta precisão e qualidade.</p>
+        </section>
+
+        <!-- Grade vazia onde os produtos serão injetados pelo Firebase -->
+        <div class="catalog-grid" id="catalogGrid">
+            <p style="text-align: center; width: 100%; padding: 40px; color: #888;">Carregando produtos...</p>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2026 Ueno 3D. Todos os direitos reservados.</p>
+        </div>
+    </footer>
+
+    <!-- IMPORTAÇÃO DO FIREBASE E LÓGICA PARA EXIBIR OS PRODUTOS -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-app.js";
+        import { getFirestore, collection, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
+
+        // =========================================================
+        // COLE AQUI AS MESMAS CHAVES QUE VOCÊ USOU NO ADMIN.HTML
+        // =========================================================
+        const firebaseConfig = {
+			apiKey: "AIzaSyDog1tIqTJ8roZ-535Oi4Vlmz6LpZKDjt8",
+			authDomain: "ueno-3d.firebaseapp.com",
+			projectId: "ueno-3d",
+			storageBucket: "ueno-3d.firebasestorage.app",
+			messagingSenderId: "1052191833120",
+			appId: "1:1052191833120:web:13398e34919e64b1e99045"
+		};
+        // =========================================================
+
+        // Inicializa o Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        
+        // Função para buscar e desenhar os produtos na tela
+        async function carregarProdutos() {
+            const catalogGrid = document.getElementById('catalogGrid');
+            
+            try {
+                // Busca os produtos ordenados do mais recente para o mais antigo
+                const q = query(collection(db, "produtos"), orderBy("dataCriacao", "desc"));
+                const querySnapshot = await getDocs(q);
+                
+                catalogGrid.innerHTML = ''; // Remove o texto "Carregando produtos..."
+
+                if (querySnapshot.empty) {
+                    catalogGrid.innerHTML = '<p style="text-align: center; width: 100%;">Nenhum produto cadastrado ainda.</p>';
+                    return;
+                }
+
+                // Para cada produto encontrado no banco, cria o HTML (o "cartão") dele
+                querySnapshot.forEach((doc) => {
+                    const produto = doc.data();
+                    
+                    const cardHTML = `
+                        <div class="product-card">
+                            <div class="product-image" style="padding: 0; background-color: transparent;">
+                                <img src="${produto.imagemUrl}" alt="${produto.nome}" style="width: 100%; height: 260px; object-fit: cover;">
+                            </div>
+                            <div class="product-info">
+                                <h3>${produto.nome}</h3>
+                                <p>${produto.descricao}</p>
+                                <span class="price">R$ ${produto.preco}</span>
+                            </div>
+                        </div>
+                    `;
+                    // Adiciona o cartão na grade
+                    catalogGrid.innerHTML += cardHTML;
+                });
+
+            } catch (error) {
+                console.error("Erro ao carregar produtos:", error);
+                catalogGrid.innerHTML = '<p style="text-align: center; color: red;">Erro ao carregar o catálogo. Tente atualizar a página.</p>';
+            }
+        }
+
+        // Executa a função assim que a página é carregada
+        carregarProdutos();
+    </script>
+</body>
+</html>

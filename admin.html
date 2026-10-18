@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ueno 3D - Painel Administrativo</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        .admin-container { max-width: 600px; margin: 40px auto; background: var(--card-bg); padding: 30px; border-radius: 12px; border: 1px solid var(--border-color); }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; color: var(--primary-color); }
+        .form-group input, .form-group textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; }
+        .btn { background-color: var(--primary-color); color: white; border: none; padding: 12px 20px; border-radius: 6px; cursor: pointer; width: 100%; font-size: 1rem; font-weight: bold; transition: 0.2s; }
+        .btn:hover { background-color: #000; }
+        .btn-danger { background-color: #cc0000; margin-top: 15px; }
+        .hidden { display: none; }
+        #status-msg { margin-top: 15px; text-align: center; font-weight: bold; color: green; }
+        
+        /* Estilos para a lista de produtos no Admin */
+        .admin-product-list { margin-top: 40px; border-top: 1px solid var(--border-color); padding-top: 20px; }
+        .admin-product-item { display: flex; justify-content: space-between; align-items: center; padding: 10px; border-bottom: 1px solid #eee; }
+        .admin-product-item span { font-weight: bold; }
+        .btn-delete { background-color: #ff4444; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8rem; }
+        .btn-delete:hover { background-color: #cc0000; }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="container header-container">
+            <div class="logo-wrapper">
+                <img src="logo.png" alt="Ueno 3D Logo" class="logo-img">
+                <span class="logo-text">UENO 3D - ADMIN</span>
+            </div>
+            <a href="index.html" class="login-btn">Voltar à Vitrine</a>
+        </div>
+    </header>
+
+    <main class="container">
+        <!-- TELA DE LOGIN -->
+        <div id="login-screen" class="admin-container">
+            <h2 style="margin-bottom: 20px; text-align: center;">Acesso Restrito</h2>
+            <form id="login-form">
+                <div class="form-group">
+                    <label>E-mail</label>
+                    <input type="email" id="email" required placeholder="Email criado no Firebase">
+                </div>
+                <div class="form-group">
+                    <label>Senha</label>
+                    <input type="password" id="senha" required placeholder="Senha">
+                </div>
+                <button type="submit" class="btn">Entrar</button>
+                <div id="login-error" style="color: red; margin-top: 10px; text-align: center;"></div>
+            </form>
+        </div>
+
+        <!-- TELA DO PAINEL -->
+        <div id="admin-screen" class="admin-container hidden">
+            <h2 style="margin-bottom: 20px;">Cadastrar Novo Produto</h2>
+            <form id="product-form">
+                <div class="form-group">
+                    <label>Nome da Peça</label>
+                    <input type="text" id="nome-produto" required placeholder="Ex: Vaso Geométrico">
+                </div>
+                <div class="form-group">
+                    <label>Preço (R\$)</label>
+                    <input type="text" id="preco-produto" required placeholder="Ex: 45,00">
+                </div>
+                <div class="form-group">
+                    <label>Descrição</label>
+                    <textarea id="desc-produto" rows="3" required placeholder="Ex: Impresso em PLA Velvet verde..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Foto do Produto</label>
+                    <input type="file" id="foto-produto" accept="image/*" required>
+                </div>
+                <button type="submit" class="btn" id="btn-salvar">Salvar Produto</button>
+                <div id="status-msg"></div>
+            </form>
+
+            <!-- NOVA SEÇÃO: Lista de produtos para excluir -->
+            <div class="admin-product-list">
+                <h3>Produtos Cadastrados</h3>
+                <div id="lista-produtos-admin">
+                    <!-- A lista aparecerá aqui -->
+                </div>
+            </div>
+
+            <button id="btn-sair" class="btn btn-danger" style="margin-top: 30px;">Sair da Conta</button>
+        </div>
+    </main>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-app.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-auth.js";
+        import { getFirestore, collection, addDoc, serverTimestamp, getDocs, query, orderBy, doc, deleteDoc } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-storage.js";
+
+        // =========================================================
+        // COLE AQUI O SEU firebaseConfig NOVAMENTE:
+        // =========================================================
+        const firebaseConfig = {
+			apiKey: "AIzaSyDog1tIqTJ8roZ-535Oi4Vlmz6LpZKDjt8",
+			authDomain: "ueno-3d.firebaseapp.com",
+			projectId: "ueno-3d",
+			storageBucket: "ueno-3d.firebasestorage.app",
+			messagingSenderId: "1052191833120",
+			appId: "1:1052191833120:web:13398e34919e64b1e99045"
+		};
+        // =========================================================
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const storage = getStorage(app);
+
+        const loginScreen = document.getElementById('login-screen');
+        const adminScreen = document.getElementById('admin-screen');
+        const listaAdmin = document.getElementById('lista-produtos-admin');
+        
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                loginScreen.classList.add('hidden');
+                adminScreen.classList.remove('hidden');
+                carregarProdutosAdmin(); // Carrega a lista quando loga
+            } else {
+                loginScreen.classList.remove('hidden');
+                adminScreen.classList.add('hidden');
+            }
+        });
+
+        // ... (Lógica de login e sair continuam iguais)
+        document.getElementById('login-form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            signInWithEmailAndPassword(auth, document.getElementById('email').value, document.getElementById('senha').value)
+                .catch(() => { document.getElementById('login-error').innerText = "E-mail ou senha incorretos."; });
+        });
+        document.getElementById('btn-sair').addEventListener('click', () => { signOut(auth); });
+
+        // Salvar Produto
+        document.getElementById('product-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btnSalvar = document.getElementById('btn-salvar');
+            const statusMsg = document.getElementById('status-msg');
+            btnSalvar.innerText = "Enviando..."; btnSalvar.disabled = true;
+
+            try {
+                const arquivoFoto = document.getElementById('foto-produto').files[0];
+                const storageRef = ref(storage, 'produtos/' + Date.now() + "_" + arquivoFoto.name);
+                await uploadBytes(storageRef, arquivoFoto);
+                const urlImagem = await getDownloadURL(storageRef);
+
+                await addDoc(collection(db, "produtos"), {
+                    nome: document.getElementById('nome-produto').value,
+                    preco: document.getElementById('preco-produto').value,
+                    descricao: document.getElementById('desc-produto').value,
+                    imagemUrl: urlImagem,
+                    dataCriacao: serverTimestamp()
+                });
+
+                statusMsg.innerText = "Salvo com sucesso!";
+                document.getElementById('product-form').reset();
+                carregarProdutosAdmin(); // Atualiza a lista na hora
+
+            } catch (error) {
+                statusMsg.style.color = "red"; statusMsg.innerText = "Erro ao salvar.";
+            } finally {
+                btnSalvar.innerText = "Salvar Produto"; btnSalvar.disabled = false;
+                setTimeout(() => { statusMsg.innerText = ""; }, 3000);
+            }
+        });
+
+        // NOVA FUNÇÃO: Carregar e Excluir
+        async function carregarProdutosAdmin() {
+            listaAdmin.innerHTML = "Carregando...";
+            const q = query(collection(db, "produtos"), orderBy("dataCriacao", "desc"));
+            const snapshot = await getDocs(q);
+            
+            listaAdmin.innerHTML = "";
+            if(snapshot.empty) { listaAdmin.innerHTML = "Nenhum produto."; return; }
+
+            snapshot.forEach((documento) => {
+                const prod = documento.data();
+                const id = documento.id; // ID único do produto no banco
+                
+                const div = document.createElement('div');
+                div.className = 'admin-product-item';
+                div.innerHTML = `
+                    <span>${prod.nome} - R$ ${prod.preco}</span>
+                    <button class="btn-delete" data-id="${id}">Excluir</button>
+                `;
+                listaAdmin.appendChild(div);
+            });
+
+            // Adiciona o evento de clique nos botões de excluir
+            document.querySelectorAll('.btn-delete').forEach(btn => {
+                btn.addEventListener('click', async (e) => {
+                    const idParaApagar = e.target.getAttribute('data-id');
+                    if(confirm("Tem certeza que deseja apagar este produto?")) {
+                        await deleteDoc(doc(db, "produtos", idParaApagar));
+                        carregarProdutosAdmin(); // Recarrega a lista
+                    }
+                });
+            });
+        }
+    </script>
+</body>
+</html>
