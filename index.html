@@ -13,8 +13,7 @@
                 <img src="logo.png" alt="Ueno 3D Logo" class="logo-img">
                 <span class="logo-text">UENO 3D</span>
             </div>
-            <!-- O botão agora é um link que leva direto para a tela de admin -->
-            <a href="admin.html" class="login-btn" style="text-decoration: none;">Admin Login</a>
+            <a href="admin.html" class="login-btn">Admin Login</a>
         </div>
     </header>
 
@@ -24,7 +23,6 @@
             <p>Itens exclusivos e personalizados, impressos com alta precisão e qualidade.</p>
         </section>
 
-        <!-- Grade vazia onde os produtos serão injetados pelo Firebase -->
         <div class="catalog-grid" id="catalogGrid">
             <p style="text-align: center; width: 100%; padding: 40px; color: #888;">Carregando produtos...</p>
         </div>
@@ -36,13 +34,26 @@
         </div>
     </footer>
 
-    <!-- IMPORTAÇÃO DO FIREBASE E LÓGICA PARA EXIBIR OS PRODUTOS -->
+    <!-- Botão WhatsApp Flutuante Geral (Canto da tela) -->
+    <a href="#" id="link-wa-flutuante" target="_blank" class="float-wa">
+        <!-- Ícone do WhatsApp em formato SVG para carregar rápido -->
+        <svg viewBox="0 0 32 32" width="35" height="35" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M16 2a13 13 0 0 0-10.9 20.1L3 29l7.1-2.1A13 13 0 1 0 16 2zm0 24.2a11 11 0 0 1-5.6-1.5l-.4-.2-4.2 1.2 1.3-4.1-.3-.4A11 11 0 1 1 16 26.2zm6-8.2c-.3-.2-2-.9-2.3-1-.3-.1-.5-.2-.7.1-.2.3-.9 1.1-1 1.3-.2.2-.4.2-.7.1-.3-.1-1.4-.5-2.6-1.6-1-1-1.2-1.2-1.4-1.5-.2-.3 0-.4.1-.6l.5-.6c.2-.2.2-.4.3-.6.1-.2 0-.4-.1-.6-.1-.2-.8-1.9-1-2.6-.2-.7-.5-.6-.7-.6h-.6c-.2 0-.6.1-.9.4-.3.3-1.2 1.2-1.2 2.8 0 1.6 1.2 3.1 1.4 3.4.2.3 2.3 3.6 5.6 5 2.2.9 3 1 3.9.9.9-.1 2-.8 2.3-1.6.3-.8.3-1.5.2-1.6-.1-.2-.4-.3-.7-.4z"/></svg>
+    </a>
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-app.js";
         import { getFirestore, collection, getDocs, query, orderBy } from "https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore.js";
 
         // =========================================================
-        // COLE AQUI AS MESMAS CHAVES QUE VOCÊ USOU NO ADMIN.HTML
+        // 1. CONFIGURE SEU WHATSAPP AQUI (Ex: 55 + DDD + Número)
+        // =========================================================
+        const meuWhatsApp = "5519991228391"; 
+        
+        // Link para o botão flutuante
+        document.getElementById('link-wa-flutuante').href = `https://wa.me/${meuWhatsApp}?text=Olá! Gostaria de saber mais sobre as impressões 3D.`;
+
+        // =========================================================
+        // 2. COLE AQUI AS SUAS CHAVES DO FIREBASE
         // =========================================================
         const firebaseConfig = {
 			apiKey: "AIzaSyDog1tIqTJ8roZ-535Oi4Vlmz6LpZKDjt8",
@@ -54,53 +65,54 @@
 		};
         // =========================================================
 
-        // Inicializa o Firebase
         const app = initializeApp(firebaseConfig);
         const db = getFirestore(app);
         
-        // Função para buscar e desenhar os produtos na tela
         async function carregarProdutos() {
             const catalogGrid = document.getElementById('catalogGrid');
-            
             try {
-                // Busca os produtos ordenados do mais recente para o mais antigo
                 const q = query(collection(db, "produtos"), orderBy("dataCriacao", "desc"));
                 const querySnapshot = await getDocs(q);
                 
-                catalogGrid.innerHTML = ''; // Remove o texto "Carregando produtos..."
+                catalogGrid.innerHTML = ''; 
 
                 if (querySnapshot.empty) {
                     catalogGrid.innerHTML = '<p style="text-align: center; width: 100%;">Nenhum produto cadastrado ainda.</p>';
                     return;
                 }
 
-                // Para cada produto encontrado no banco, cria o HTML (o "cartão") dele
                 querySnapshot.forEach((doc) => {
                     const produto = doc.data();
                     
+                    // Cria a mensagem automática para aquele produto
+                    const mensagem = encodeURIComponent(`Olá! Tenho interesse na peça 3D: ${produto.nome} (R$ ${produto.preco})`);
+                    const linkZap = `https://wa.me/${meuWhatsApp}?text=${mensagem}`;
+                    
                     const cardHTML = `
                         <div class="product-card">
-                            <div class="product-image" style="padding: 0; background-color: transparent;">
-                                <img src="${produto.imagemUrl}" alt="${produto.nome}" style="width: 100%; height: 260px; object-fit: cover;">
+                            <div class="product-image">
+                                <img src="${produto.imagemUrl}" alt="${produto.nome}">
                             </div>
                             <div class="product-info">
                                 <h3>${produto.nome}</h3>
                                 <p>${produto.descricao}</p>
-                                <span class="price">R$ ${produto.preco}</span>
+                                <div class="price-action">
+                                    <span class="price">R$ ${produto.preco}</span>
+                                    <a href="${linkZap}" target="_blank" class="btn-wa-card">
+                                        WhatsApp
+                                    </a>
+                                </div>
                             </div>
                         </div>
                     `;
-                    // Adiciona o cartão na grade
                     catalogGrid.innerHTML += cardHTML;
                 });
 
             } catch (error) {
-                console.error("Erro ao carregar produtos:", error);
                 catalogGrid.innerHTML = '<p style="text-align: center; color: red;">Erro ao carregar o catálogo. Tente atualizar a página.</p>';
             }
         }
 
-        // Executa a função assim que a página é carregada
         carregarProdutos();
     </script>
 </body>
